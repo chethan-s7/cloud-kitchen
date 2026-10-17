@@ -1,29 +1,38 @@
+import dns from "node:dns";
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
+
+import "dotenv/config";
 import express from "express";
+import mongoose from "mongoose";
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
 
-const menu = [
-  { id: 1, name: "Biryani", price: 220, veg: false },
-  { id: 2, name: "Dosa", price: 80, veg: true },
-  { id: 3, name: "Paneer Butter Masala", price: 180, veg: true },
-];
-let nextId = 4;
+const menuItemSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  price: { type: Number, required: true },
+  veg: { type: Boolean, default: false },
+});
+
+const MenuItem = mongoose.model("MenuItem", menuItemSchema);
 
 app.get("/", (req, res) => {
   res.send("Cloud Kitchen API is running");
 });
 
-app.get("/api/menu", (req, res) => {
-  res.json(menu);
+app.get("/api/menu", async (req, res) => {
+  const items = await MenuItem.find();
+  res.json(items);
 });
 
-app.get("/api/menu/:id", (req, res) => {
-  const id = Number(req.params.id);
-  const dish = menu.find((d) => d.id === id);
+app.get("/api/menu/:id", async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    return res.status(400).json({ message: "Invalid id" });
+  }
 
+  const dish = await MenuItem.findById(req.params.id);
   if (!dish) {
     return res.status(404).json({ message: "Dish not found" });
   }
@@ -31,7 +40,7 @@ app.get("/api/menu/:id", (req, res) => {
   res.json(dish);
 });
 
-app.post("/api/menu", (req, res) => {
+app.post("/api/menu", async (req, res) => {
   const { name, price, veg } = req.body;
 
   if (!name || typeof price !== "number") {
@@ -40,30 +49,30 @@ app.post("/api/menu", (req, res) => {
       .json({ message: "name and a numeric price are required" });
   }
 
-  const newDish = {
-    id: nextId,
-    name: name,
-    price: price,
-    veg: Boolean(veg),
-  };
-  nextId = nextId + 1;
-
-  menu.push(newDish);
+  const newDish = await MenuItem.create({ name, price, veg: Boolean(veg) });
   res.status(201).json(newDish);
 });
 
-app.delete("/api/menu/:id", (req, res) => {
-  const id = Number(req.params.id);
-  const index = menu.findIndex((d) => d.id === id);
+app.delete("/api/menu/:id", async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    return res.status(400).json({ message: "Invalid id" });
+  }
 
-  if (index === -1) {
+  const deleted = await MenuItem.findByIdAndDelete(req.params.id);
+  if (!deleted) {
     return res.status(404).json({ message: "Dish not found" });
   }
 
-  menu.splice(index, 1);
   res.json({ message: "Dish deleted" });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+async function start() {
+  await mongoose.connect(process.env.MONGO_URI);
+  console.log("Connected to MongoDB");
+
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+start();
