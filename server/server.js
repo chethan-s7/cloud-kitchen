@@ -17,6 +17,17 @@ app.get("/api/menu", (req, res) => {
   res.json(menu);
 });
 
+app.get("/api/menu/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const dish = menu.find((d) => d.id === id);
+
+  if (!dish) {
+    return res.status(404).json({ message: "Dish not found" });
+  }
+
+  res.json(dish);
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
