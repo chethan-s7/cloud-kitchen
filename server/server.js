@@ -20,6 +20,24 @@ const menuItemSchema = new mongoose.Schema({
 
 const MenuItem = mongoose.model("MenuItem", menuItemSchema);
 
+const orderSchema = new mongoose.Schema(
+  {
+    items: [
+      {
+        menuItem: { type: mongoose.Schema.Types.ObjectId, ref: "MenuItem" },
+        name: String,
+        price: Number,
+        qty: Number,
+      },
+    ],
+    total: { type: Number, required: true },
+    status: { type: String, default: "placed" },
+  },
+  { timestamps: true },
+);
+
+const Order = mongoose.model("Order", orderSchema);
+
 app.get("/", (req, res) => {
   res.send("Cloud Kitchen API is running");
 });
@@ -67,6 +85,52 @@ app.delete("/api/menu/:id", async (req, res) => {
   }
 
   res.json({ message: "Dish deleted" });
+});
+
+app.post("/api/orders", async (req, res) => {
+  const { items } = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ message: "items must be a non-empty array" });
+  }
+
+  for (const item of items) {
+    if (
+      !mongoose.isValidObjectId(item.id) ||
+      !Number.isInteger(item.qty) ||
+      item.qty < 1
+    ) {
+      return res.status(400).json({
+        message: "Each item needs a valid id and a whole qty of 1 or more",
+      });
+    }
+  }
+
+  const ids = items.map((item) => item.id);
+  const dishes = await MenuItem.find({ _id: { $in: ids } });
+
+  const orderItems = [];
+  for (const item of items) {
+    const dish = dishes.find((d) => d._id.toString() === item.id);
+    if (!dish) {
+      return res.status(400).json({ message: `Dish not found: ${item.id}` });
+    }
+    orderItems.push({
+      menuItem: dish._id,
+      name: dish.name,
+      price: dish.price,
+      qty: item.qty,
+    });
+  }
+
+  const total = orderItems.reduce((sum, i) => sum + i.price * i.qty, 0);
+  const order = await Order.create({ items: orderItems, total });
+  res.status(201).json(order);
+});
+
+app.get("/api/orders", async (req, res) => {
+  const orders = await Order.find().sort({ createdAt: -1 });
+  res.json(orders);
 });
 
 async function start() {

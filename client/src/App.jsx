@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 function App() {
   const [menu, setMenu] = useState([]);
   const [cart, setCart] = useState([]);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     fetch("http://localhost:3000/api/menu")
@@ -11,6 +12,7 @@ function App() {
   }, []);
 
   function addToCart(dish) {
+    setMessage("");
     const existing = cart.find((item) => item._id === dish._id);
     if (existing) {
       setCart(
@@ -25,6 +27,30 @@ function App() {
 
   function removeFromCart(id) {
     setCart(cart.filter((item) => item._id !== id));
+  }
+
+  async function placeOrder() {
+    try {
+      const res = await fetch("http://localhost:3000/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: cart.map((item) => ({ id: item._id, qty: item.qty })),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setMessage("Order failed: " + err.message);
+        return;
+      }
+
+      const order = await res.json();
+      setMessage(`Order placed! Total: ₹${order.total}. Order id: ${order._id}`);
+      setCart([]);
+    } catch (error) {
+      setMessage("Could not reach the server. Is the backend running?");
+    }
   }
 
   const totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
@@ -61,8 +87,11 @@ function App() {
             </p>
           ))}
           <h3>Total: ₹{totalPrice}</h3>
+          <button onClick={placeOrder}>Place order</button>
         </div>
       )}
+
+      {message && <h3>{message}</h3>}
     </div>
   );
 }
