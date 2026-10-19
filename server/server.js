@@ -100,9 +100,11 @@ app.post("/api/orders", async (req, res) => {
       !Number.isInteger(item.qty) ||
       item.qty < 1
     ) {
-      return res.status(400).json({
-        message: "Each item needs a valid id and a whole qty of 1 or more",
-      });
+      return res
+        .status(400)
+        .json({
+          message: "Each item needs a valid id and a whole qty of 1 or more",
+        });
     }
   }
 
@@ -131,6 +133,31 @@ app.post("/api/orders", async (req, res) => {
 app.get("/api/orders", async (req, res) => {
   const orders = await Order.find().sort({ createdAt: -1 });
   res.json(orders);
+});
+
+app.patch("/api/orders/:id/status", async (req, res) => {
+  const allowed = ["placed", "preparing", "ready"];
+  const { status } = req.body;
+
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    return res.status(400).json({ message: "Invalid id" });
+  }
+  if (!allowed.includes(status)) {
+    return res
+      .status(400)
+      .json({ message: "status must be placed, preparing or ready" });
+  }
+
+  const order = await Order.findByIdAndUpdate(
+    req.params.id,
+    { status },
+    { new: true },
+  );
+  if (!order) {
+    return res.status(404).json({ message: "Order not found" });
+  }
+
+  res.json(order);
 });
 
 async function start() {

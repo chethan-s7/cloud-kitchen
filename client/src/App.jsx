@@ -1,12 +1,30 @@
 import { useState, useEffect } from "react";
 
+const API = "http://localhost:3000";
+
 function App() {
+  const [page, setPage] = useState("menu");
+
+  return (
+    <div>
+      <h1>Cloud Kitchen</h1>
+      <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+        <button onClick={() => setPage("menu")}>Menu</button>
+        <button onClick={() => setPage("kitchen")}>Kitchen</button>
+      </div>
+
+      {page === "menu" ? <MenuPage /> : <KitchenPage />}
+    </div>
+  );
+}
+
+function MenuPage() {
   const [menu, setMenu] = useState([]);
   const [cart, setCart] = useState([]);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetch("http://localhost:3000/api/menu")
+    fetch(`${API}/api/menu`)
       .then((res) => res.json())
       .then((data) => setMenu(data));
   }, []);
@@ -31,7 +49,7 @@ function App() {
 
   async function placeOrder() {
     try {
-      const res = await fetch("http://localhost:3000/api/orders", {
+      const res = await fetch(`${API}/api/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -58,7 +76,6 @@ function App() {
 
   return (
     <div>
-      <h1>Cloud Kitchen</h1>
       <p>Fresh food, made in one kitchen, delivered to you.</p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", justifyContent: "center" }}>
@@ -92,6 +109,72 @@ function App() {
       )}
 
       {message && <h3>{message}</h3>}
+    </div>
+  );
+}
+
+function KitchenPage() {
+  const [orders, setOrders] = useState([]);
+  const [error, setError] = useState("");
+
+  async function loadOrders() {
+    try {
+      const res = await fetch(`${API}/api/orders`);
+      const data = await res.json();
+      setOrders(data);
+      setError("");
+    } catch (err) {
+      setError("Could not load orders. Is the backend running?");
+    }
+  }
+
+  useEffect(() => {
+    loadOrders();
+    const timer = setInterval(loadOrders, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  async function changeStatus(id, status) {
+    await fetch(`${API}/api/orders/${id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    loadOrders();
+  }
+
+  return (
+    <div>
+      <h2>Kitchen orders</h2>
+      {error && <p>{error}</p>}
+      {orders.length === 0 && !error && <p>No orders yet.</p>}
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", justifyContent: "center" }}>
+        {orders.map((order) => (
+          <div
+            key={order._id}
+            style={{ border: "1px solid #555", borderRadius: "8px", padding: "16px", width: "260px" }}
+          >
+            <h3>Status: {order.status}</h3>
+            {order.items.map((item) => (
+              <p key={item._id}>
+                {item.name} × {item.qty}
+              </p>
+            ))}
+            <p>
+              <b>Total: ₹{order.total}</b>
+            </p>
+            <p style={{ fontSize: "12px" }}>
+              {new Date(order.createdAt).toLocaleString()}
+            </p>
+            <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+              <button onClick={() => changeStatus(order._id, "placed")}>Placed</button>
+              <button onClick={() => changeStatus(order._id, "preparing")}>Preparing</button>
+              <button onClick={() => changeStatus(order._id, "ready")}>Ready</button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
