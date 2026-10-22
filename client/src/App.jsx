@@ -2,23 +2,135 @@ import { useState, useEffect } from "react";
 
 const API = "http://localhost:3000";
 
+function loadSaved() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("auth"));
+    return saved && saved.token && saved.user ? saved : null;
+  } catch (err) {
+    return null;
+  }
+}
+
 function App() {
+  const [auth, setAuth] = useState(loadSaved());
   const [page, setPage] = useState("menu");
+
+  function handleLogin(data) {
+    localStorage.setItem("auth", JSON.stringify(data));
+    setAuth(data);
+    setPage("menu");
+  }
+
+  function logout() {
+    localStorage.removeItem("auth");
+    setAuth(null);
+    setPage("menu");
+  }
+
+  const isOwner = auth && auth.user.role === "owner";
 
   return (
     <div>
       <h1>Cloud Kitchen</h1>
-      <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+
+      <div style={{ display: "flex", gap: "8px", justifyContent: "center", alignItems: "center" }}>
         <button onClick={() => setPage("menu")}>Menu</button>
-        <button onClick={() => setPage("kitchen")}>Kitchen</button>
+        {isOwner && <button onClick={() => setPage("kitchen")}>Kitchen</button>}
+        {auth ? (
+          <>
+            <span>
+              Hi, {auth.user.name} ({auth.user.role})
+            </span>
+            <button onClick={logout}>Logout</button>
+          </>
+        ) : (
+          <button onClick={() => setPage("login")}>Login / Register</button>
+        )}
       </div>
 
-      {page === "menu" ? <MenuPage /> : <KitchenPage />}
+      {page === "menu" && (
+        <MenuPage auth={auth} goToLogin={() => setPage("login")} logout={logout} />
+      )}
+      {page === "kitchen" && isOwner && <KitchenPage auth={auth} logout={logout} />}
+      {page === "login" && <AuthPage onLogin={handleLogin} />}
     </div>
   );
 }
 
-function MenuPage() {
+function AuthPage({ onLogin }) {
+  const [mode, setMode] = useState("login");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setError("");
+    try {
+      const url = mode === "login" ? "/api/auth/login" : "/api/auth/register";
+      const body =
+        mode === "login" ? { email, password } : { name, email, password };
+
+      const res = await fetch(API + url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.message || "Something went wrong");
+        return;
+      }
+      onLogin(data);
+    } catch (err) {
+      setError("Could not reach the server. Is the backend running?");
+    }
+  }
+
+  return (
+    <div>
+      <h2>{mode === "login" ? "Login" : "Create account"}</h2>
+      <form
+        onSubmit={submit}
+        style={{ display: "flex", flexDirection: "column", gap: "8px", maxWidth: "300px", margin: "0 auto" }}
+      >
+        {mode === "register" && (
+          <input
+            placeholder="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        )}
+        <input
+          placeholder="Email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          placeholder="Password (min 6 characters)"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <button type="submit">{mode === "login" ? "Login" : "Register"}</button>
+      </form>
+
+      {error && <p>{error}</p>}
+
+      <p>
+        {mode === "login" ? "New here? " : "Already have an account? "}
+        <button onClick={() => setMode(mode === "login" ? "register" : "login")}>
+          {mode === "login" ? "Create account" : "Go to login"}
+        </button>
+      </p>
+    </div>
+  );
+}
+
+function MenuPage({ auth, goToLogin, logout }) {
   const [menu, setMenu] = useState([]);
   const [cart, setCart] = useState([]);
   const [message, setMessage] = useState("");
@@ -48,14 +160,28 @@ function MenuPage() {
   }
 
   async function placeOrder() {
+    if (!auth) {
+      goToLogin();
+      return;
+    }
+
     try {
       const res = await fetch(`${API}/api/orders`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${auth.token}`,
+        },
         body: JSON.stringify({
           items: cart.map((item) => ({ id: item._id, qty: item.qty })),
         }),
       });
+
+      if (res.status === 401) {
+        setMessage("Your login expired. Please log in again.");
+        logout();
+        return;
+      }
 
       if (!res.ok) {
         const err = await res.json();
@@ -104,7 +230,9 @@ function MenuPage() {
             </p>
           ))}
           <h3>Total: ₹{totalPrice}</h3>
-          <button onClick={placeOrder}>Place order</button>
+          <button onClick={placeOrder}>
+            {auth ? "Place order" : "Login to place order"}
+          </button>
         </div>
       )}
 
@@ -113,15 +241,28 @@ function MenuPage() {
   );
 }
 
-function KitchenPage() {
+function KitchenPage({ auth, logout }) {
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
 
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${auth.token}`,
+  };
+
   async function loadOrders() {
     try {
-      const res = await fetch(`${API}/api/orders`);
-      const data = await res.json();
-      setOrders(data);
+      const res = await fetch(`${API}/api/orders`, { headers });
+      if (res.status === 401) {
+        logout();
+        return;
+      }
+      if (!res.ok) {
+        const err = await res.json();
+        setError(err.message);
+        return;
+      }
+      setOrders(await res.json());
       setError("");
     } catch (err) {
       setError("Could not load orders. Is the backend running?");
@@ -137,7 +278,7 @@ function KitchenPage() {
   async function changeStatus(id, status) {
     await fetch(`${API}/api/orders/${id}/status`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ status }),
     });
     loadOrders();
